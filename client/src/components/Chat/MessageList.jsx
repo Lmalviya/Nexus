@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import MessageItem from './MessageItem';
 
-const MessageList = ({ messages }) => {
+const MessageList = ({ messages, onEdit, onRegenerate }) => {
     const bottomRef = useRef(null);
 
     useEffect(() => {
@@ -11,7 +11,12 @@ const MessageList = ({ messages }) => {
     return (
         <div className="space-y-6">
             {messages.map((msg) => (
-                <MessageItem key={msg.id} message={msg} />
+                <MessageItem
+                    key={msg.id}
+                    message={msg}
+                    onEdit={onEdit}
+                    onRegenerate={onRegenerate}
+                />
             ))}
             <div ref={bottomRef} />
         </div>
