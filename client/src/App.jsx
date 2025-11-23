@@ -8,6 +8,7 @@ import Register from './pages/Register';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ConversationProvider } from './context/ConversationContext';
+import { UploadProvider } from './context/UploadContext';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -28,21 +29,23 @@ function App() {
     <AuthProvider>
       <ThemeProvider defaultTheme="dark" storageKey="nexus-ui-theme">
         <ConversationProvider>
-          <Router>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
+          <UploadProvider>
+            <Router>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
 
-              <Route path="/chat" element={
-                <ProtectedRoute>
-                  <Layout>
-                    <ChatInterface />
-                  </Layout>
-                </ProtectedRoute>
-              } />
-            </Routes>
-          </Router>
+                <Route path="/chat" element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <ChatInterface />
+                    </Layout>
+                  </ProtectedRoute>
+                } />
+              </Routes>
+            </Router>
+          </UploadProvider>
         </ConversationProvider>
       </ThemeProvider>
     </AuthProvider>

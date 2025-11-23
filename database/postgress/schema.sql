@@ -80,3 +80,19 @@ CREATE TABLE IF NOT EXISTS usage_tracking (
     request_count INTEGER DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- 6. DOCUMENTS
+-- Stores metadata for files uploaded to MinIO
+CREATE TABLE IF NOT EXISTS documents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+    
+    file_key TEXT NOT NULL, -- MinIO path (e.g., org_.../user_.../uuid.pdf)
+    filename TEXT NOT NULL, -- Original filename (e.g., "My Paper.pdf")
+    content_type TEXT,
+    size BIGINT,
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);

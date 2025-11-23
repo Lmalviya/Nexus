@@ -87,6 +87,14 @@ def register(request: RegisterRequest):
         
         conn.commit()
         
+        # Create user folder in MinIO
+        try:
+            from services.storage import StorageService
+            storage_service = StorageService()
+            storage_service.create_user_folder(str(org_id), str(user['id']))
+        except Exception as e:
+            print(f"Failed to create user folder in MinIO: {e}")
+        
         # Generate Token
         token = create_access_token({
             "sub": str(user['id']),

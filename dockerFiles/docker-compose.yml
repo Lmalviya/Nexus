@@ -75,9 +75,36 @@ services:
     networks:
       - nexus_network
 
+  orchestration:
+    build:
+      context: ../orchestration
+    container_name: nexus_orchestration
+    restart: always
+    ports:
+      - "8001:8001"
+    networks:
+      - nexus_network
+
+  minio:
+    image: minio/minio
+    container_name: nexus_minio
+    restart: always
+    ports:
+      - "9000:9000" # API
+      - "9001:9001" # Console UI
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - nexus_network
+
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
 
 
 networks:
