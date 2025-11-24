@@ -12,3 +12,4 @@ requests
 boto3
 cryptography
 redis
+qdrant-client

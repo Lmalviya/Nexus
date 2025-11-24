@@ -17,17 +17,6 @@ services:
     networks:
       - nexus_network
 
-  adminer:
-    image: adminer
-    container_name: nexus_adminer
-    restart: always
-    ports:
-      - "8080:8080"
-    depends_on:
-      - postgres
-    networks:
-      - nexus_network
-
   redis:
     image: redis:7-alpine
     container_name: nexus_redis
