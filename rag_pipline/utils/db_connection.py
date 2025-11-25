@@ -58,6 +58,138 @@ class QdrantConnector:
             points=points
         )
         print(f"Points updated in {collection_name}.")
+    
+    # New methods for text and image collections
+    def create_text_collection(self, user_id: str, vector_size: int = 384):
+        """Create collection for text embeddings."""
+        collection_name = f"{user_id}_text_embeddings"
+        if not self.client.collection_exists(collection_name):
+            self.client.create_collection(
+                collection_name=collection_name,
+                vectors_config=models.VectorParams(size=vector_size, distance=models.Distance.COSINE),
+            )
+            print(f"Text collection {collection_name} created.")
+        else:
+            print(f"Text collection {collection_name} already exists.")
+        return collection_name
+    
+    def create_image_collection(self, user_id: str, vector_size: int = 512):
+        """Create collection for image embeddings."""
+        collection_name = f"{user_id}_image_embeddings"
+        if not self.client.collection_exists(collection_name):
+            self.client.create_collection(
+                collection_name=collection_name,
+                vectors_config=models.VectorParams(size=vector_size, distance=models.Distance.COSINE),
+            )
+            print(f"Image collection {collection_name} created.")
+        else:
+            print(f"Image collection {collection_name} already exists.")
+        return collection_name
+    
+    def push_text_embeddings(self, user_id: str, vectors: List[List[float]], payloads: List[Dict[str, Any]], ids: Optional[List[Union[str, int]]] = None):
+        """Push text embeddings to text collection."""
+        collection_name = f"{user_id}_text_embeddings"
+        
+        # Generate IDs if not provided
+        if ids is None:
+            import uuid
+            ids = [str(uuid.uuid4()) for _ in range(len(vectors))]
+        
+        self.client.upsert(
+            collection_name=collection_name,
+            points=models.Batch(
+                ids=ids,
+                vectors=vectors,
+                payloads=payloads
+            )
+        )
+        print(f"Pushed {len(vectors)} text embeddings to {collection_name}.")
+        return ids
+    
+    def push_image_embeddings(self, user_id: str, vectors: List[List[float]], payloads: List[Dict[str, Any]], ids: Optional[List[Union[str, int]]] = None):
+        """Push image embeddings to image collection."""
+        collection_name = f"{user_id}_image_embeddings"
+        
+        # Generate IDs if not provided
+        if ids is None:
+            import uuid
+            ids = [str(uuid.uuid4()) for _ in range(len(vectors))]
+        
+        self.client.upsert(
+            collection_name=collection_name,
+            points=models.Batch(
+                ids=ids,
+                vectors=vectors,
+                payloads=payloads
+            )
+        )
+        print(f"Pushed {len(vectors)} image embeddings to {collection_name}.")
+        return ids
+    
+    def search_text(self, user_id: str, query_vector: List[float], top_k: int = 5, filter_conditions: Optional[models.Filter] = None) -> List[models.ScoredPoint]:
+        """Search text embeddings."""
+        collection_name = f"{user_id}_text_embeddings"
+        return self.client.search(
+            collection_name=collection_name,
+            query_vector=query_vector,
+            limit=top_k,
+            query_filter=filter_conditions
+        )
+    
+    def search_images(self, user_id: str, query_vector: List[float], top_k: int = 5, filter_conditions: Optional[models.Filter] = None) -> List[models.ScoredPoint]:
+        """Search image embeddings."""
+        collection_name = f"{user_id}_image_embeddings"
+        return self.client.search(
+            collection_name=collection_name,
+            query_vector=query_vector,
+            limit=top_k,
+            query_filter=filter_conditions
+        )
+
+    def search_keyword(self, user_id: str, query_text: str, top_k: int = 5) -> List[models.ScoredPoint]:
+        """
+        Simulate keyword search using Qdrant's scroll/filter or text matching if available.
+        For now, we will use a simple scroll with a filter if we had payload indexing, 
+        but since we don't have a dedicated keyword engine, we'll try to use Qdrant's recommendation 
+        or just rely on the vector search if keyword isn't strictly supported without a plugin.
+        
+        However, to strictly follow the "word search" requirement, we might need to assume 
+        the payload contains the text and we do a filter. 
+        
+        Let's assume we can filter by a 'text' field in payload containing the query words.
+        This is a naive implementation of "keyword search" in a vector DB without an inverted index.
+        """
+        collection_name = f"{user_id}_text_embeddings"
+        
+        # This is a placeholder for a real BM25 or keyword search.
+        # Qdrant supports full-text search on payload fields if configured.
+        # We will assume the 'content' field is indexed for text.
+        
+        try:
+            # Try to use Qdrant's text filter if available, otherwise just return empty or fallback
+            # For this implementation, we'll return an empty list if we can't do true keyword search,
+            # or we can rely on the hybrid retriever to handle the logic.
+            # Let's try to use a Match filter on the 'content' field.
+            
+            # Note: This requires the 'content' field to be indexed as 'text'.
+            
+            return self.client.scroll(
+                collection_name=collection_name,
+                scroll_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="content",
+                            match=models.MatchText(text=query_text)
+                        )
+                    ]
+                ),
+                limit=top_k,
+                with_payload=True,
+                with_vectors=False
+            )[0] # scroll returns (points, next_page_offset)
+        except Exception as e:
+            print(f"Keyword search failed or not supported: {e}")
+            return []
 
 
 class PostgresConnector:
@@ -150,6 +282,21 @@ class PostgresConnector:
         with self.conn.cursor() as cur:
             cur.execute(query, values)
         print(f"Data deleted from {schema_name}.{table_name}.")
+
+    def execute_raw_sql(self, sql_query: str) -> List[tuple]:
+        """
+        Executes a raw SQL query and returns the results.
+        WARNING: This is dangerous if not properly sanitized, but required for the SQL Agent.
+        """
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(sql.SQL(sql_query))
+                if cur.description: # Check if it's a SELECT query (returns rows)
+                    return cur.fetchall()
+                return [] # For INSERT/UPDATE/DELETE
+        except Exception as e:
+            print(f"Error executing raw SQL: {e}")
+            raise e
         
     def close(self):
         self.conn.close()
