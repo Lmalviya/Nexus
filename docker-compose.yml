@@ -74,6 +74,22 @@ services:
     networks:
       - nexus_network
 
+  llms_host:
+    build:
+      context: ./llms_host
+      dockerfile: Dockerfile
+    container_name: nexus_llms_host
+    restart: always
+    ports:
+      - "8002:8002"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - nexus_network
+
   minio:
     image: minio/minio
     container_name: nexus_minio

@@ -1,0 +1,7 @@
+ollama
+redis
+requests
+fastapi
+uvicorn
+pydantic
+psycopg2-binary

@@ -1,7 +1,8 @@
 from typing import List, Dict, Any
-from agents.router_agent import RouterAgent
-from agents.sql_agent import SQLAgent
+from llms_host.agents.rag_router_agent import RouterAgent, RouterInput
+from llms_host.agents.sql_agent import SQLAgent, SQLInput
 from utils.db_connection import PostgresConnector
+from llms_host.config import get_agent_config
 import json
 
 class ContextOrchestrator:
@@ -9,9 +10,12 @@ class ContextOrchestrator:
     Orchestrates the iterative retrieval process involving Router and SQL Agents.
     """
     def __init__(self, postgres_connector: PostgresConnector):
-        self.router_agent = RouterAgent()
+        self.rag_router_agent = RouterAgent()
         self.sql_agent = SQLAgent()
         self.postgres = postgres_connector
+        # Load configs
+        self.router_config = get_agent_config("router")
+        self.sql_config = get_agent_config("sql_agent")
 
     def orchestrate(self, user_query: str, initial_context: List[Dict[str, Any]], conversation_id: str, max_iterations: int = 10) -> List[Dict[str, Any]]:
         """
@@ -34,28 +38,27 @@ class ContextOrchestrator:
             print(f"Iteration {i+1}/{max_iterations}")
             
             # 1. Router Decision
-            decision_response = self.router_agent.route(user_query, context_strs, conversation_id)
+            router_input = RouterInput(
+                user_query=user_query,
+                retrieved_context=context_strs,
+                conversation_id=conversation_id
+            )
             
-            # Handle dummy response or real JSON
-            if isinstance(decision_response, str):
-                 # Try to parse if it's a string JSON
-                 try:
-                     decision = json.loads(decision_response)
-                 except:
-                     # Fallback for dummy
-                     if "sql" in str(decision_response).lower():
-                         decision = {"decision": "sql"}
-                     else:
-                         decision = {"decision": "vector"}
-            else:
-                decision = decision_response
+            decision_output = self.rag_router_agent.route(router_input, self.router_config)
             
-            if decision.get("decision") != "sql":
-                print("Router decided to stop (Vector sufficient).")
+            if decision_output.decision != "sql":
+                print(f"Router decided to stop (Vector sufficient). Reason: {decision_output.reason}")
                 break
                 
             # 2. SQL Generation
-            sql_query = self.sql_agent.generate_sql(user_query, context_strs, conversation_id)
+            sql_input = SQLInput(
+                user_query=user_query,
+                context=context_strs,
+                conversation_id=conversation_id
+            )
+            
+            sql_output = self.sql_agent.generate_sql(sql_input, self.sql_config)
+            sql_query = sql_output.sql_query
             print(f"Generated SQL: {sql_query}")
             
             # 3. Execute SQL
