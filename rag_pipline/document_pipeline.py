@@ -1,18 +1,9 @@
-"""
-Document Processing Pipeline
-
-This module provides an end-to-end pipeline for processing documents:
-1. Download from MinIO
-2. Preprocess (extract text, tables, images)
-3. Separate text content from images
-4. Chunk text content intelligently
-5. Generate embeddings
-6. Store in Qdrant with metadata
-"""
-
 import os
 import shutil
+import io
+import base64
 from typing import List, Dict, Tuple, Optional
+from enum import Enum
 from langchain_core.documents import Document
 from PIL import Image
 
@@ -20,6 +11,7 @@ from rag_pipline.preprocessing.preprocess import FilePreprocessor
 from rag_pipline.chunking import ChunkingFactory
 from rag_pipline.utils.embeddings import TextEmbeddings, ImageEmbeddings
 from rag_pipline.utils.db_connection import ConnectionManager
+from rag_pipline.utils.llm_call import generate_description
 from rag_pipline.utils.pipeline_utils import (
     parse_minio_url,
     generate_unique_id,
@@ -32,6 +24,11 @@ from rag_pipline.utils.pipeline_utils import (
 from rag_pipline.config import TextEmbeddingsConfig, ImageEmbeddingsConfig
 from rag_pipline.pipeline_config import PipelineConfig
 
+class DocumentType(Enum):
+    TEXT = "text"
+    TABLE = "table"
+    IMAGE = "image"
+    PDF = "pdf"
 
 class DocumentPipeline:
     """
@@ -49,6 +46,9 @@ class DocumentPipeline:
             config: Pipeline configuration
         """
         self.config = config or PipelineConfig()
+
+        self.batch_size = 100
+        self.text_chunking_type = 'sentence'
         
         # Initialize components
         self.connection_manager = ConnectionManager()
@@ -113,14 +113,14 @@ class DocumentPipeline:
             
             return {
                 "success": True,
-                "text_chunks_stored": text_results.get("chunks_stored", 0),
+                "text_chunks_stored": text_results.get("chunks_stored", 0) + image_results.get("image_descriptions_stored", 0),
                 "images_stored": image_results.get("images_stored", 0),
                 "text_collection": text_results.get("collection_name"),
-                "image_collection": image_results.get("collection_name"),
+                "image_collection": image_results.get("image_collection_name"),
             }
         
         except Exception as e:
-            print(f"Error processing document: {e}")
+            print(f"Error processing document: {e}") 
             if self.config.cleanup_temp_files:
                 self._cleanup(local_file_path)
             return {"success": False, "error": str(e)}
@@ -203,20 +203,18 @@ class DocumentPipeline:
             # Determine chunking strategy based on content type
             content_type = doc.metadata.get('content_type', 'text')
             
-            if content_type == 'table':
-                # Use sentence chunking for table descriptions
-                chunks = self.chunking_factory.chunk_text(
-                    doc.page_content,
-                    chunker_type='sentence',
-                    metadata=doc.metadata
-                )
-            else:
+            if content_type == DocumentType.TABLE:
+                # Keep table description as a single chunk
+                chunks = [Document(page_content=doc.page_content, metadata=doc.metadata)]
+            elif content_type == DocumentType.TEXT:
                 # Use semantic chunking for regular text
                 chunks = self.chunking_factory.chunk_text(
                     doc.page_content,
-                    chunker_type=self.config.default_chunker,
+                    chunker_type=self.text_chunking_type,
                     metadata=doc.metadata
                 )
+            else:
+                raise ValueError(f"Unknown content type: {content_type}")
             
             all_chunks.extend(chunks)
         
@@ -234,6 +232,7 @@ class DocumentPipeline:
         payloads = []
         for i, chunk in enumerate(all_chunks):
             payload = chunk.metadata.copy()
+            payload["type"] = DocumentType.TEXT
             payload['chunk_id'] = generate_unique_id('chunk')
             payload['minio_url'] = minio_url
             payload['chunk_text'] = chunk.page_content
@@ -245,10 +244,9 @@ class DocumentPipeline:
         collection_name = qdrant.create_text_collection(user_id, self.config.text_embedding_dim)
         
         # Store in batches
-        batch_size = 100
-        for i in range(0, len(embeddings), batch_size):
-            batch_embeddings = embeddings[i:i + batch_size]
-            batch_payloads = payloads[i:i + batch_size]
+        for i in range(0, len(embeddings), self.batch_size):
+            batch_embeddings = embeddings[i:i + self.batch_size]
+            batch_payloads = payloads[i:i + self.batch_size]
             qdrant.push_text_embeddings(user_id, batch_embeddings, batch_payloads)
         
         return {
@@ -271,32 +269,64 @@ class DocumentPipeline:
         """
         # Step 1: Load images
         print("Loading images...")
-        images = []
-        valid_docs = []
-        
+        user_images = []
+        pdf_images = []
+        valid_image_docs = []
+        valid_pdf_image_docs = []
         for doc in image_docs:
             local_path = doc.metadata.get('local_path')
             if local_path and os.path.exists(local_path):
                 try:
                     img = Image.open(local_path).convert('RGB')
-                    images.append(img)
-                    valid_docs.append(doc)
+                    if doc.metadata.get('source_file_type') != DocumentType.PDF:
+                        user_images.append(img)
+                        valid_image_docs.append(doc)
+                    elif doc.metadata.get('source_file_type') == DocumentType.PDF:
+                        pdf_images.append(img)
+                        valid_pdf_image_docs.append(doc)
+                    else:
+                        raise ValueError(f"Unknown source file type: {doc.metadata.get('source_file_type')}")
                 except Exception as e:
                     print(f"Error loading image {local_path}: {e}")
         
-        if not images:
+        if not user_images and not pdf_images:
             return {"images_stored": 0}
         
-        print(f"Loaded {len(images)} images")
+        print(f"Loaded {len(user_images)} user images and {len(pdf_images)} pdf images")
         
-        # Step 2: Generate embeddings
+        # Step 2: Generate embeddings and descriptions
         print("Generating image embeddings...")
-        embeddings = self.image_embedder.embed_images(images)
+        user_image_embeddings = []
+        if user_images:
+            user_image_embeddings = self.image_embedder.embed_images(user_images)
+        
+        # Generate descriptions for PDF images
+        image_descriptions = []
+        if pdf_images:
+            print(f"Generating descriptions for {len(pdf_images)} PDF images...")
+            for img in pdf_images:
+                # Convert PIL image to base64
+                buffered = io.BytesIO()
+                img.save(buffered, format="JPEG")
+                img_str = base64.b64encode(buffered.getvalue()).decode()
+                
+                # Call LLM to describe image
+                desc = generate_description(
+                    content_type="image",
+                    data={"image_data": img_str},
+                    conversation_id=f"desc_{user_id}_{generate_unique_id('desc')}"
+                )
+                image_descriptions.append(desc)
+        
+        pdf_image_descriptions_embeddings = []
+        if image_descriptions:
+            pdf_image_descriptions_embeddings = self.text_embedder.embed_documents(image_descriptions)
         
         # Step 3: Prepare metadata
-        payloads = []
-        for i, doc in enumerate(valid_docs):
+        image_payloads = []
+        for i, doc in enumerate(valid_image_docs):
             payload = doc.metadata.copy()
+            payload["type"] = DocumentType.IMAGE
             payload['image_id'] = generate_unique_id('image')
             payload['source_minio_url'] = minio_url
             
@@ -305,29 +335,58 @@ class DocumentPipeline:
             image_filename = os.path.basename(local_path)
             payload['image_minio_url'] = build_minio_url(
                 f"org-{org_id}",
-                org_id,
+                org_id, 
                 user_id,
                 "images",
                 image_filename
             )
+            image_payloads.append(payload)
+        
+        pdf_image_payload = []
+        for i, doc in enumerate(valid_pdf_image_docs):
+            payload = doc.metadata.copy()
+            payload["type"] = DocumentType.PDF
+            payload['image_id'] = generate_unique_id('image')
+            payload['source_minio_url'] = minio_url
+            payload['description'] = image_descriptions[i] if i < len(image_descriptions) else ""
             
-            payloads.append(payload)
+            # Get MinIO URL for the image itself
+            local_path = doc.metadata.get('local_path', '')
+            pdf_image_filename = os.path.basename(local_path)
+            payload['image_minio_url'] = build_minio_url(
+                f"org-{org_id}",
+                org_id, 
+                user_id,
+                "images",
+                pdf_image_filename
+            )
+            pdf_image_payload.append(payload)
         
         # Step 4: Create collection and store embeddings
         print("Storing image embeddings in Qdrant...")
         qdrant = self.connection_manager.get_qdrant()
-        collection_name = qdrant.create_image_collection(user_id, self.config.image_embedding_dim)
+        image_collection_name = qdrant.create_image_collection(user_id, self.config.image_embedding_dim)
+        text_collection_name = qdrant.create_text_collection(user_id, self.config.text_embedding_dim)
+
+        # Store user images (image embeddings)
+        if user_image_embeddings and image_payloads:
+            for i in range(0, len(image_payloads), self.batch_size):
+                batch_embeddings = user_image_embeddings[i:i + self.batch_size]
+                batch_payloads = image_payloads[i:i + self.batch_size]
+                qdrant.push_image_embeddings(user_id, batch_embeddings, batch_payloads, image_collection_name)
         
-        # Store in batches
-        batch_size = 50
-        for i in range(0, len(embeddings), batch_size):
-            batch_embeddings = embeddings[i:i + batch_size]
-            batch_payloads = payloads[i:i + batch_size]
-            qdrant.push_image_embeddings(user_id, batch_embeddings, batch_payloads)
+        # Store PDF images (text embeddings of descriptions)
+        if pdf_image_descriptions_embeddings and pdf_image_payload:
+            for i in range(0, len(pdf_image_payload), self.batch_size):
+                batch_embeddings = pdf_image_descriptions_embeddings[i:i + self.batch_size]
+                batch_payloads = pdf_image_payload[i:i + self.batch_size]
+                qdrant.push_text_embeddings(user_id, batch_embeddings, batch_payloads, text_collection_name)
         
         return {
-            "images_stored": len(images),
-            "collection_name": collection_name
+            "images_stored": len(image_payloads),
+            "image_descriptions_stored": len(pdf_image_payload),
+            "image_collection_name": image_collection_name,
+            "text_collection_name": text_collection_name
         }
     
     def _cleanup(self, file_path: str):

@@ -12,60 +12,76 @@ LLMS_HOST_URL = os.getenv("LLMS_HOST_URL", "http://localhost:8002")
 def call_llm(prompt: str, conversation_id: str, metadata: Optional[Dict[str, Any]] = None) -> str:
     """
     Calls the LLM Host service to generate a response.
-    This function might need to be adapted depending on which agent you want to call.
-    If it's a generic LLM call, we might need a generic endpoint or map to a specific agent.
-    Assuming this is for general query rewriting or similar, we might default to query_rewriter or a generic agent.
-    However, the previous implementation was a dummy.
-    Let's assume this maps to a generic 'chat' or specific agent based on metadata.
+    Routes to specific agents based on metadata['agent'].
     """
     if metadata is None:
         metadata = {}
         
-    agent_name = metadata.get("agent", "query_rewriter") # Default to query_rewriter if not specified
+    agent_name = metadata.get("agent", "query_rewriter")
     
-    endpoint = f"{LLMS_HOST_URL}/api/v1/agent/rewrite" # Default endpoint for now
-    
-    # Map agent names to endpoints if needed
-    if agent_name == "summarizer":
-        endpoint = f"{LLMS_HOST_URL}/api/v1/agent/summarize"
-        payload = {
-            "conversation_id": conversation_id,
-            "messages": [{"role": "user", "content": prompt}] # Summarizer expects messages
-        }
-    elif agent_name == "description":
-        endpoint = f"{LLMS_HOST_URL}/api/v1/agent/describe"
-        payload = {
-            "conversation_id": conversation_id,
-            "content_type": metadata.get("content_type", "text"),
-            "data": {"content": prompt}
-        }
-    else:
-        # Default to rewrite
-        payload = {
-            "conversation_id": conversation_id,
-            "user_query": prompt,
-            "additional_context": metadata.get("context")
-        }
-
     try:
-        response = requests.post(endpoint, json=payload)
-        response.raise_for_status()
-        result = response.json()
-        
-        if agent_name == "summarizer":
-            return result.get("summary", "")
+        if agent_name == "query_rewriter":
+            endpoint = f"{LLMS_HOST_URL}/api/v1/agent/rewrite"
+            payload = {
+                "conversation_id": conversation_id,
+                "user_query": prompt,
+                "additional_context": metadata.get("context")
+            }
+            response = requests.post(endpoint, json=payload)
+            response.raise_for_status()
+            return response.json().get("rewritten_query", "")
+
+        elif agent_name == "summarizer":
+            endpoint = f"{LLMS_HOST_URL}/api/v1/agent/summarize"
+            # Summarizer expects a list of messages. 
+            # If prompt is a single string, we wrap it, but usually this agent expects history.
+            # Assuming prompt here is the raw text to summarize or we need to pass messages in metadata.
+            # For now, let's assume the prompt is the content to summarize if messages aren't provided.
+            messages = metadata.get("messages", [{"role": "user", "content": prompt}])
+            payload = {
+                "conversation_id": conversation_id,
+                "messages": messages
+            }
+            response = requests.post(endpoint, json=payload)
+            response.raise_for_status()
+            return response.json().get("summary", "")
+
         elif agent_name == "description":
-            return result.get("description", "")
-        elif hasattr(result, "get"):
-             # Query rewriter returns string directly or dict? 
-             # The agent returns QueryRewriteOutput object which is Pydantic.
-             # FastAPI returns it as JSON.
-             return result.get("rewritten_query", str(result))
-        else:
-            return str(result)
+            # This maps to generate_description but exposed via call_llm for convenience?
+            # It's better to use generate_description directly, but we support it here.
+            return generate_description(
+                content_type=metadata.get("content_type", "text"),
+                data={"content": prompt, **metadata.get("data", {})},
+                conversation_id=conversation_id
+            )
             
+        elif agent_name == "chat":
+            endpoint = f"{LLMS_HOST_URL}/api/v1/agent/chat"
+            payload = {
+                "conversation_id": conversation_id,
+                "user_message": prompt,
+                "images": metadata.get("images"), # List of base64 strings
+                "additional_context": metadata.get("context")
+            }
+            response = requests.post(endpoint, json=payload)
+            response.raise_for_status()
+            return response.json().get("response", "") # ChatAgent returns 'response' field? Need to check ChatAgent return.
+
+        else:
+            # Default fallback or error
+            logger.warning(f"Unknown agent: {agent_name}, defaulting to chat")
+            endpoint = f"{LLMS_HOST_URL}/api/v1/agent/chat"
+            payload = {
+                "conversation_id": conversation_id,
+                "user_message": prompt,
+                "additional_context": metadata.get("context")
+            }
+            response = requests.post(endpoint, json=payload)
+            response.raise_for_status()
+            return response.json().get("response", "")
+
     except Exception as e:
-        logger.error(f"Error calling LLM Host: {e}")
+        logger.error(f"Error calling LLM Host ({agent_name}): {e}")
         return f"Error: {str(e)}"
 
 def get_text_embeddings(texts: List[str]) -> List[List[float]]:
@@ -90,15 +106,22 @@ def get_image_embeddings(base64_images: List[str]) -> List[List[float]]:
 
 def generate_description(content_type: str, data: Dict[str, Any], conversation_id: str = "desc_gen") -> str:
     endpoint = f"{LLMS_HOST_URL}/api/v1/agent/describe"
+    
+    # Ensure data has the correct fields for the agent
+    # TableDescriptionInput: headers, sample_rows, additional_context
+    # ImageDescriptionInput: image_data (base64), additional_context
+    
     payload = {
         "conversation_id": conversation_id,
         "content_type": content_type,
         "data": data
     }
+    
     try:
         response = requests.post(endpoint, json=payload)
         response.raise_for_status()
-        return response.json()["description"]
+        result = response.json()
+        return result.get("description", "")
     except Exception as e:
         logger.error(f"Error generating description: {e}")
         return f"Error: {str(e)}"

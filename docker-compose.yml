@@ -90,6 +90,26 @@ services:
     networks:
       - nexus_network
 
+  rag_pipeline:
+    build:
+      context: ./rag_pipline
+      dockerfile: Dockerfile
+    container_name: nexus_rag_pipeline
+    restart: always
+    environment:
+      - LLMS_HOST_URL=http://llms_host:8002
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+    depends_on:
+      - llms_host
+      - redis
+      - minio
+    networks:
+      - nexus_network
+
   minio:
     image: minio/minio
     container_name: nexus_minio
