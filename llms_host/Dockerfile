@@ -2,23 +2,18 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies if needed (e.g. for redis client or other libs)
-# RUN apt-get update && apt-get install -y ...
+# Install curl for Ollama installation
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# Install Ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh
+
+# Copy requirements and install Python dependencies
 COPY requirement.txt .
-RUN pip install --no-cache-dir -r requirement.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r requirement.txt
 
-# Copy source code
-# We copy the current directory (llms_host) into /app/llms_host
-# But wait, the context will likely be the parent directory or we need to structure it right.
-# If we build from 'llms_host' directory, we copy . to .
-# But python imports expect 'llms_host' package.
-# It's better to run from the root workspace context usually.
-# Let's assume we build from the 'llms_host' directory but we need to handle imports.
-# If we run `uvicorn llms_host.main:app`, we need `llms_host` to be a package in python path.
-# So we should copy the content of llms_host into /app/llms_host.
-
+# Copy application code
 COPY . /app/llms_host
 
 # Set python path
@@ -27,5 +22,28 @@ ENV PYTHONPATH=/app
 # Expose port
 EXPOSE 8002
 
-# Command
-CMD ["uvicorn", "llms_host.main:app", "--host", "0.0.0.0", "--port", "8002"]
+# Create startup script that runs Ollama and the app
+RUN echo '#!/bin/bash\n\
+    # Start Ollama in the background\n\
+    ollama serve &\n\
+    OLLAMA_PID=$!\n\
+    \n\
+    # Wait for Ollama to be ready\n\
+    echo "Waiting for Ollama to start..."\n\
+    sleep 5\n\
+    \n\
+    # Pull primary model (llama3) - required for chat\n\
+    echo "Pulling llama3 model..."\n\
+    ollama pull llama3\n\
+    \n\
+    # Pull llava model in background (for vision tasks)\n\
+    echo "Pulling llava model in background..."\n\
+    (ollama pull llava &)\n\
+    \n\
+    echo "Primary model ready. Starting application..."\n\
+    \n\
+    # Start the FastAPI application\n\
+    uvicorn llms_host.main:app --host 0.0.0.0 --port 8002\n\
+    ' > /app/start.sh && chmod +x /app/start.sh
+
+CMD ["/app/start.sh"]

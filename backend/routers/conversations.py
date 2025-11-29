@@ -4,10 +4,15 @@ from typing import Optional, List, Dict, Any
 import jwt
 import os
 import redis_client
+import httpx
+import uuid
+from datetime import datetime
+from utils.db_connection import get_db_connection
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 JWT_SECRET = os.getenv("JWT_SECRET", "supersecretkey")
+ORCHESTRATION_URL = os.getenv("ORCHESTRATION_URL", "http://orchestration:8001")
 
 class CreateSessionRequest(BaseModel):
     title: Optional[str] = None
@@ -25,6 +30,12 @@ class AddMessageRequest(BaseModel):
 
 class UpdateTitleRequest(BaseModel):
     title: str
+
+class ChatRequest(BaseModel):
+    user_message: str
+    images: Optional[List[str]] = None
+    model: Optional[str] = None
+    provider: Optional[str] = None
 
 def get_current_user(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -229,3 +240,108 @@ def regenerate_response(session_id: str, user_data: dict = Depends(get_current_u
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to regenerate")
+
+
+@router.post("/{session_id}/chat")
+async def chat_with_orchestration(
+    session_id: str,
+    request: ChatRequest,
+    user_data: dict = Depends(get_current_user)
+):
+    """
+    Send chat message through orchestration service.
+    Handles: retrieval decision, context retrieval, chat response.
+    """
+    user_id = user_data['sub']
+    org_id = user_data.get('org_id')
+    
+    # Create user message
+    user_msg = {
+        "id": str(uuid.uuid4()),
+        "role": "user",
+        "content": request.user_message,
+        "timestamp": datetime.utcnow().isoformat(),
+        "model": request.model,
+        "provider": request.provider
+    }
+    
+    # Fetch API key if provider is specified
+    api_key = None
+    api_base_url = None
+    
+    if request.provider:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT api_key_encrypted, api_base_url 
+                FROM user_api_keys 
+                WHERE user_id = %s AND provider = %s
+            """, (user_id, request.provider))
+            row = cursor.fetchone()
+            if row:
+                from utils.encryption import decrypt_value
+                api_key = decrypt_value(row[0])
+                api_base_url = row[1]
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print(f"Error fetching API key: {e}")
+            # Continue without key (orchestration might use system default or fail)
+
+    try:
+        # Call orchestration service
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            orch_response = await client.post(
+                f"{ORCHESTRATION_URL}/api/v1/orchestration/chat",
+                json={
+                    "user_message": request.user_message,
+                    "images": request.images,
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "org_id": org_id,
+                    "model": request.model,
+                    "provider": request.provider,
+                    "api_key": api_key,
+                    "api_base_url": api_base_url
+                }
+            )
+            orch_response.raise_for_status()
+            orch_data = orch_response.json()
+        
+        # Store user message
+        redis_client.add_message(org_id, user_id, session_id, user_msg)
+        
+        # Create assistant message with orchestration data
+        assistant_msg = {
+            "id": str(uuid.uuid4()),
+            "role": "assistant",
+            "content": orch_data["response"],
+            "timestamp": datetime.utcnow().isoformat(),
+            "model": orch_data.get("model_used", request.model),
+            "provider": request.provider,
+            "artifact_type": orch_data.get("artifact_type"),
+            "artifact_language": orch_data.get("artifact_language"),
+            "artifact_content": orch_data.get("artifact_content"),
+            "retrieval_used": orch_data.get("retrieval_used", False),
+            "retrieval_count": orch_data.get("retrieval_count", 0),
+            "retrieval_sources": orch_data.get("retrieval_sources"),
+            "model_switched": orch_data.get("model_switched", False),
+            "switch_reason": orch_data.get("switch_reason")
+        }
+        
+        # Store assistant message
+        session = redis_client.add_message(org_id, user_id, session_id, assistant_msg)
+        
+        return {
+            "status": "success",
+            "session": session,
+            "orchestration_response": orch_data
+        }
+        
+    except httpx.HTTPError as e:
+        print(f"Orchestration service error: {e}")
+        raise HTTPException(status_code=503, detail="Orchestration service unavailable")
+    except Exception as e:
+        print(f"Chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

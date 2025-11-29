@@ -13,7 +13,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../database/postgress/schema.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./database/postgress/schema.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - nexus_network
 
@@ -31,7 +31,7 @@ services:
 
   backend:
     build:
-      context: ../backend
+      context: ./backend
     container_name: nexus_backend
     restart: always
     ports:
@@ -46,15 +46,23 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - ORCHESTRATION_URL=http://orchestration:8001
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_BUCKET=documents
+      - MINIO_PUBLIC_ENDPOINT=http://localhost:9000
     depends_on:
       - postgres
       - redis
+      - orchestration
     networks:
       - nexus_network
 
   client:
     build:
-      context: ../client
+      context: ./client
     container_name: nexus_client
     restart: always
     ports:
@@ -66,11 +74,17 @@ services:
 
   orchestration:
     build:
-      context: ../orchestration
+      context: ./orchestration
     container_name: nexus_orchestration
     restart: always
     ports:
       - "8001:8001"
+    environment:
+      - LLMS_HOST_URL=http://llms_host:8002
+      - RAG_PIPELINE_URL=http://rag_pipeline:8003
+    depends_on:
+      - llms_host
+      - rag_pipeline
     networks:
       - nexus_network
 
@@ -96,6 +110,8 @@ services:
       dockerfile: Dockerfile
     container_name: nexus_rag_pipeline
     restart: always
+    ports:
+      - "8003:8003"
     environment:
       - LLMS_HOST_URL=http://llms_host:8002
       - REDIS_HOST=redis
@@ -103,6 +119,7 @@ services:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_BUCKET=documents
     depends_on:
       - llms_host
       - redis

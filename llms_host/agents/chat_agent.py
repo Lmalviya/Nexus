@@ -14,12 +14,12 @@ class ChatInput(BaseModel):
     Attributes:
         user_message: The user's text message
         images: Optional list of base64-encoded images
-        conversation_id: The conversation ID for tracking
+        session_id: The session ID for tracking
         additional_context: Optional additional context (e.g., from vector DB)
     """
     user_message: str = Field(..., description="The user's message")
     images: Optional[List[str]] = Field(None, description="Base64-encoded images")
-    conversation_id: str = Field(..., description="Conversation ID")
+    session_id: str = Field(..., description="Session ID")
     additional_context: Optional[str] = Field(None, description="Additional context from retrieval")
 
 class ChatOutput(BaseModel):
@@ -71,7 +71,7 @@ class ChatAgent(BaseAgent):
         # Call the base agent's run method
         response_text = self.run(
             user_input=user_input,
-            conversation_id=input_data.conversation_id,
+            session_id=input_data.session_id,
             llm_config=llm_config,
             additional_context=input_data.additional_context
         )

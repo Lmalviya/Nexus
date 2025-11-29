@@ -6,7 +6,7 @@ from llms_host.config import LLMConfig, get_agent_config
 
 class SummarizerInput(BaseModel):
     messages: List[Dict[str, Any]] = Field(..., description="List of messages to summarize")
-    conversation_id: str = Field(..., description="The conversation ID")
+    session_id: str = Field(..., description="The session ID")
 
 class SummarizerOutput(BaseModel):
     summary: str = Field(..., description="The generated summary")
@@ -15,7 +15,7 @@ class SummarizerAgent(BaseAgent):
     def __init__(self):
         super().__init__(agent_name="summarizer", prompts_module=prompts)
 
-    def summarize(self, messages: List[Dict[str, Any]], conversation_id: str = "internal_summary") -> str:
+    def summarize(self, messages: List[Dict[str, Any]], session_id: str = "internal_summary") -> str:
         """
         Summarizes the list of messages.
         Note: This method signature is slightly different because it's often called internally
@@ -30,7 +30,7 @@ class SummarizerAgent(BaseAgent):
         
         response_text = self.run(
             user_input=f"Summarize these messages:\n{messages_text}",
-            conversation_id=conversation_id,
+            session_id=session_id,
             llm_config=llm_config
         )
         

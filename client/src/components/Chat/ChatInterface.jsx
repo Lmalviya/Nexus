@@ -14,12 +14,15 @@ const ChatInterface = () => {
         sendMessage,
         loading,
         modifyMessage,
-        regenerateResponse
+        regenerateResponse,
+        currentModel
     } = useConversation();
     const { user } = useAuth();
 
-    const handleSendMessage = (content, model) => {
-        sendMessage(content, model?.model, model?.provider);
+    const handleSendMessage = (content, model, images = []) => {
+        // Use provided model or fall back to currentModel from context
+        const selectedModel = model || currentModel;
+        sendMessage(content, selectedModel?.id, selectedModel?.provider, images);
     };
 
     return (

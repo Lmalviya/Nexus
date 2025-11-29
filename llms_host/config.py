@@ -15,6 +15,7 @@ class AgentName(Enum):
     TABLE_DESCRIPTION = "table_description"
     IMAGE_DESCRIPTION = "image_description"
     CHAT = "chat"
+    RETRIEVAL_DECISION = "retrieval_decision"
 
 @dataclass
 class LLMConfig:
@@ -80,6 +81,11 @@ def get_agent_config(agent_name: str) -> LLMConfig:
             provider=LLMProvider.OLLAMA,
             model_name="qwen2.5:32b",  # Best balance of quality and performance
             parameters={"temperature": 0.7}  # Higher temperature for creative responses
+        ),
+        AgentName.RETRIEVAL_DECISION: LLMConfig(
+            provider=LLMProvider.OLLAMA,
+            model_name="llama3",
+            parameters={"temperature": 0.1}  # Low temperature for consistent decision-making
         ),
     }
     try:

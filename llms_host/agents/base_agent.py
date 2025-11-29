@@ -22,14 +22,14 @@ class BaseAgent:
 
     def run(self, 
             user_input: str, 
-            conversation_id: str, 
+            session_id: str, 
             llm_config: LLMConfig, 
             additional_context: Optional[str] = None,
             output_model: Optional[Type[BaseModel]] = None) -> Any:
         """
         Executes the agent's main logic.
         """
-        conversation = Conversation(self.agent_name, conversation_id)
+        conversation = Conversation(self.agent_name, session_id)
         
         # 1. Assemble Prompt
         messages = self._assemble_prompt(conversation, user_input, additional_context)

@@ -17,14 +17,14 @@ class ContextOrchestrator:
         self.router_config = get_agent_config("router")
         self.sql_config = get_agent_config("sql_agent")
 
-    def orchestrate(self, user_query: str, initial_context: List[Dict[str, Any]], conversation_id: str, max_iterations: int = 10) -> List[Dict[str, Any]]:
+    def orchestrate(self, user_query: str, initial_context: List[Dict[str, Any]], session_id: str, max_iterations: int = 10) -> List[Dict[str, Any]]:
         """
         Iteratively enhances context by querying SQL database if needed.
         
         Args:
             user_query (str): The user's query.
             initial_context (List[Dict[str, Any]]): Initial context from vector DB.
-            conversation_id (str): The ID of the conversation.
+            session_id (str): The ID of the session.
             max_iterations (int): Maximum number of iterations.
             
         Returns:
@@ -41,7 +41,7 @@ class ContextOrchestrator:
             router_input = RouterInput(
                 user_query=user_query,
                 retrieved_context=context_strs,
-                conversation_id=conversation_id
+                session_id=session_id
             )
             
             decision_output = self.rag_router_agent.route(router_input, self.router_config)
@@ -54,7 +54,7 @@ class ContextOrchestrator:
             sql_input = SQLInput(
                 user_query=user_query,
                 context=context_strs,
-                conversation_id=conversation_id
+                session_id=session_id
             )
             
             sql_output = self.sql_agent.generate_sql(sql_input, self.sql_config)

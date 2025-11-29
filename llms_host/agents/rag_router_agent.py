@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class RouterInput(BaseModel):
     user_query: str = Field(..., description="The user's query")
     retrieved_context: List[str] = Field(..., description="Context retrieved from the vector database")
-    conversation_id: str = Field(..., description="The conversation ID")
+    session_id: str = Field(..., description="The session ID")
 
 class RouterOutput(BaseModel):
     decision: str = Field(..., description="The decision: 'sql' or 'vector'")
@@ -33,7 +33,7 @@ class RouterAgent(BaseAgent):
         
         response_text = self.run(
             user_input=input_data.user_query,
-            conversation_id=input_data.conversation_id,
+            session_id=input_data.session_id,
             llm_config=llm_config,
             additional_context=context_str
         )

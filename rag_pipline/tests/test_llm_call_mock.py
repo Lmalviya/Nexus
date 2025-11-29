@@ -24,7 +24,7 @@ class TestLLMCall(unittest.TestCase):
         args, kwargs = mock_post.call_args
         self.assertIn("/api/v1/agent/rewrite", args[0])
         self.assertEqual(kwargs['json']['user_query'], "original query")
-        self.assertEqual(kwargs['json']['conversation_id'], "conv_123")
+        self.assertEqual(kwargs['json']['session_id'], "conv_123")
 
     @patch('rag_pipline.utils.llm_call.requests.post')
     def test_call_llm_summarize(self, mock_post):

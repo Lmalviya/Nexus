@@ -13,3 +13,6 @@ boto3
 cryptography
 redis
 qdrant-client
+httpx
+cryptography
+python-multipart

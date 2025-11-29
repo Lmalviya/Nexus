@@ -32,7 +32,7 @@ def create_session(user_id: str, org_id: str, title: str = None):
     }
     
     # Store conversation
-    key = f"conversation:{org_id}:{user_id}:{session_id}"
+    key = f"conversation:{session_id}"
     redis_client.set(key, json.dumps(session_data))
     
     # Add to user's session list
@@ -43,7 +43,7 @@ def create_session(user_id: str, org_id: str, title: str = None):
 
 def get_session(org_id: str, user_id: str, session_id: str):
     """Get a conversation session"""
-    key = f"conversation:{org_id}:{user_id}:{session_id}"
+    key = f"conversation:{session_id}"
     data = redis_client.get(key)
     
     if data:
@@ -104,7 +104,7 @@ def add_message(org_id: str, user_id: str, session_id: str, message_data: dict):
         session["title"] = message_data["content"][:50] + ("..." if len(message_data["content"]) > 50 else "")
     
     # Save updated session
-    key = f"conversation:{org_id}:{user_id}:{session_id}"
+    key = f"conversation:{session_id}"
     redis_client.set(key, json.dumps(session))
     
     return session
@@ -112,7 +112,7 @@ def add_message(org_id: str, user_id: str, session_id: str, message_data: dict):
 def delete_session(org_id: str, user_id: str, session_id: str):
     """Delete a conversation session"""
     # Remove from conversation store
-    key = f"conversation:{org_id}:{user_id}:{session_id}"
+    key = f"conversation:{session_id}"
     redis_client.delete(key)
     
     # Remove from user's session list
@@ -131,7 +131,7 @@ def update_session_title(org_id: str, user_id: str, session_id: str, title: str)
     session["title"] = title
     session["updated_at"] = datetime.utcnow().isoformat()
     
-    key = f"conversation:{org_id}:{user_id}:{session_id}"
+    key = f"conversation:{session_id}"
     redis_client.set(key, json.dumps(session))
     
     return session
@@ -157,7 +157,7 @@ def update_message(org_id: str, user_id: str, session_id: str, message_id: str, 
     
     session["updated_at"] = datetime.utcnow().isoformat()
     
-    key = f"conversation:{org_id}:{user_id}:{session_id}"
+    key = f"conversation:{session_id}"
     redis_client.set(key, json.dumps(session))
     
     return session

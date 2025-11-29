@@ -9,11 +9,11 @@ class ImageDescriptionInput(BaseModel):
     
     Attributes:
         image_data: Base64 encoded image string or image path
-        conversation_id: The conversation ID for tracking
+        session_id: The session ID for tracking
         additional_context: Optional context about the image (e.g., source, purpose)
     """
     image_data: str = Field(..., description="Base64 encoded image or image path")
-    conversation_id: str = Field(..., description="The conversation ID")
+    session_id: str = Field(..., description="The session ID")
     additional_context: Optional[str] = Field(None, description="Additional context about the image")
 
 class ImageDescriptionOutput(BaseModel):
@@ -65,7 +65,7 @@ class ImageDescriptionAgent(BaseAgent):
         
         response_text = self.run(
             user_input=user_query,
-            conversation_id=input_data.conversation_id,
+            session_id=input_data.session_id,
             llm_config=llm_config,
             output_model=ImageDescriptionOutput,
             # We may need to add image_data as a separate parameter

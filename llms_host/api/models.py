@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List
 
 class AgentRequest(BaseModel):
     """Base request model for agent endpoints."""
-    conversation_id: str
+    session_id: str  # Changed from conversation_id for consistency
     llm_config: Optional[Dict[str, Any]] = Field(None, description="Optional override for LLM config")
 
 
@@ -32,6 +32,24 @@ class ChatRequest(AgentRequest):
     user_message: str
     images: Optional[List[str]] = None
     additional_context: Optional[str] = None
+
+
+class RetrievalDecisionRequest(AgentRequest):
+    """Request model for retrieval decision."""
+    user_query: str
+    additional_context: Optional[str] = None
+
+
+class RouterRequest(AgentRequest):
+    """Request model for RAG routing decision."""
+    user_query: str
+    retrieved_context: List[str]
+
+
+class SQLRequest(AgentRequest):
+    """Request model for SQL query generation."""
+    user_query: str
+    context: List[str]
 
 
 class EmbeddingRequest(BaseModel):

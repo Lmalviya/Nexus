@@ -6,7 +6,7 @@ from llms_host.config import LLMConfig
 
 class QueryRewriteInput(BaseModel):
     user_query: str = Field(..., description="The original user query")
-    conversation_id: str = Field(..., description="The conversation ID")
+    session_id: str = Field(..., description="The session ID")
     additional_context: Optional[str] = Field(None, description="Any additional context from vector DB")
 
 class QueryRewriteOutput(BaseModel):
@@ -22,7 +22,7 @@ class QueryReWriterAgent(BaseAgent):
         """
         response_text = self.run(
             user_input=input_data.user_query,
-            conversation_id=input_data.conversation_id,
+            session_id=input_data.session_id,
             llm_config=llm_config,
             additional_context=input_data.additional_context,
             output_model=QueryRewriteOutput

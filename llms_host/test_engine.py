@@ -30,7 +30,7 @@ class TestLLMEngine(unittest.TestCase):
         response = engine.generate_response(
             agent_name=AgentName.SUMMARIZER.value,
             message="Hello",
-            conversation_id="test_id"
+            session_id="test_id"
         )
         
         self.assertEqual(response, "Mocked response")

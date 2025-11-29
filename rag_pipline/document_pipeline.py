@@ -314,7 +314,7 @@ class DocumentPipeline:
                 desc = generate_description(
                     content_type="image",
                     data={"image_data": img_str},
-                    conversation_id=f"desc_{user_id}_{generate_unique_id('desc')}"
+                    session_id=f"desc_{user_id}_{generate_unique_id('desc')}"
                 )
                 image_descriptions.append(desc)
         

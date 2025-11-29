@@ -9,7 +9,7 @@ class LLMEngine:
     def __init__(self):
         pass
 
-    def generate_response(self, agent_name: str, message: str, role: str = "user", conversation_id: str = "default", metadata: Dict[str, Any] = None) -> str:
+    def generate_response(self, agent_name: str, message: str, role: str = "user", session_id: str = "default", metadata: Dict[str, Any] = None) -> str:
         """
         Generates a response for the given agent and message.
         Manages context retrieval and memory updates.
@@ -22,7 +22,7 @@ class LLMEngine:
             return f"Configuration Error: {str(e)}"
 
         # 2. Initialize Conversation Memory
-        conversation = Conversation(agent_name, conversation_id)
+        conversation = Conversation(agent_name, session_id)
         
         # 3. Get Context (History + Summary if needed)
         # We append the current message to the context temporarily for the LLM call
@@ -55,9 +55,12 @@ class LLMEngine:
 
     def _call_ollama(self, config: LLMConfig, messages: list) -> str:
         try:
+            import os
             # Ollama python library expects 'model' and 'messages'
             # Messages should be list of dicts with 'role' and 'content'
-            response = ollama.chat(
+            ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+            client = ollama.Client(host=ollama_host)
+            response = client.chat(
                 model=config.model_name,
                 messages=messages,
                 options=config.parameters

@@ -10,12 +10,12 @@ class TableDescriptionInput(BaseModel):
     Attributes:
         headers: List of column names from the table
         sample_rows: Sample rows from the table (list of lists or list of dicts)
-        conversation_id: The conversation ID for tracking
+        session_id: The session ID for tracking
         additional_context: Optional context about the table source or purpose
     """
     headers: List[str] = Field(..., description="Column headers from the table")
     sample_rows: List[List[Any]] = Field(..., description="Sample rows from the table")
-    conversation_id: str = Field(..., description="The conversation ID")
+    session_id: str = Field(..., description="The session ID")
     additional_context: Optional[str] = Field(None, description="Additional context about the table")
 
 class TableDescriptionOutput(BaseModel):
@@ -65,7 +65,7 @@ Sample rows:
 
         response_text = self.run(
             user_input=user_query,
-            conversation_id=input_data.conversation_id,
+            session_id=input_data.session_id,
             llm_config=llm_config,
             output_model=TableDescriptionOutput
         )

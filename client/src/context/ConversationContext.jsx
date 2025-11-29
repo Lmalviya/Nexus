@@ -12,6 +12,13 @@ export const ConversationProvider = ({ children }) => {
     const [loading, setLoading] = useState(false);
     const [streaming, setStreaming] = useState(false);
 
+    // Default to Llama 3 (Local)
+    const [currentModel, setModel] = useState({
+        id: 'llama3',
+        name: 'Llama 3 (Local)',
+        provider: 'ollama'
+    });
+
     // Fetch all sessions
     const fetchSessions = useCallback(async () => {
         try {
@@ -65,7 +72,7 @@ export const ConversationProvider = ({ children }) => {
     };
 
     // Send a message
-    const sendMessage = async (content, model, provider) => {
+    const sendMessage = async (content, model, provider, images = []) => {
         let sessionId = currentSessionId;
 
         // If no session exists, create one first
@@ -76,48 +83,46 @@ export const ConversationProvider = ({ children }) => {
 
         // Optimistically add user message
         const userMsg = {
-            id: Date.now().toString(), // Temporary ID
+            id: Date.now().toString(),
             role: 'user',
             content,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            images: images
         };
         setMessages(prev => [...prev, userMsg]);
         setStreaming(true);
 
         try {
-            // Send user message to backend
-            const response = await axios.post(`http://localhost:8000/conversations/${sessionId}/messages`, {
-                role: 'user',
-                content,
-                model: model?.id,
-                provider: provider,
-                input_tokens: 0 // Backend/LLM will calculate this later
-            });
+            // Call backend chat endpoint (which calls orchestration)
+            const response = await axios.post(
+                `http://localhost:8000/conversations/${sessionId}/chat`,
+                {
+                    user_message: content,
+                    images: images,
+                    model: model,
+                    provider: provider
+                }
+            );
 
-            // Update messages with real data from backend
+            const orch = response.data.orchestration_response;
+
+            // Update messages from session
             setMessages(response.data.session.messages);
 
-            // Refresh session list to update title/timestamp
-            fetchSessions();
+            // Show retrieval metadata if used
+            if (orch.retrieval_used && orch.retrieval_count > 0) {
+                console.log(`Retrieved ${orch.retrieval_count} documents`);
+                // Could show toast notification here
+            }
 
-            // Simulate AI response (since we don't have real LLM connected yet)
-            // In a real app, this would be a separate call or streaming response
-            setTimeout(async () => {
-                const aiResponse = await axios.post(`http://localhost:8000/conversations/${sessionId}/messages`, {
-                    role: 'assistant',
-                    content: `This is a simulated response from ${model?.name || 'Nexus AI'}. I received: "${content}"`,
-                    model: model?.id,
-                    provider: provider,
-                    output_tokens: 50 // Dummy token count
-                });
-                setMessages(aiResponse.data.session.messages);
-                setStreaming(false);
-                fetchSessions();
-            }, 1000);
+            setStreaming(false);
+            fetchSessions();
 
         } catch (error) {
             console.error('Failed to send message:', error);
             setStreaming(false);
+            // Show error to user
+            alert('Failed to send message. Please try again.');
         }
     };
     // Edit a message
@@ -237,7 +242,11 @@ export const ConversationProvider = ({ children }) => {
             regenerateResponse,
             deleteSession,
             updateSessionTitle,
-            clearCurrentSession
+            deleteSession,
+            updateSessionTitle,
+            clearCurrentSession,
+            currentModel,
+            setModel
         }}>
             {children}
         </ConversationContext.Provider>

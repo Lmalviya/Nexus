@@ -7,7 +7,7 @@ from llms_host.config import LLMConfig
 class SQLInput(BaseModel):
     user_query: str = Field(..., description="The user's query")
     context: List[str] = Field(..., description="Relevant context to help generate the SQL")
-    conversation_id: str = Field(..., description="The conversation ID")
+    session_id: str = Field(..., description="The session ID")
 
 class SQLOutput(BaseModel):
     sql_query: str = Field(..., description="The generated SQL query")
@@ -27,7 +27,7 @@ class SQLAgent(BaseAgent):
         
         response_text = self.run(
             user_input=input_data.user_query,
-            conversation_id=input_data.conversation_id,
+            session_id=input_data.session_id,
             llm_config=llm_config,
             additional_context=context_str
         )
