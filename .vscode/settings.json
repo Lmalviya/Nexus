@@ -1,0 +1,6 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/rag_pipline/envRag/Scripts/python.exe",
+    "jupyter.kernels.excludePythonEnvironments": [
+        "${workspaceFolder}/rag_pipline/envRag/Scripts/python.exe"
+    ]
+}
